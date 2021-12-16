@@ -19,7 +19,7 @@
  *
  * @author Marcelo Gennari, https://gren.com.br/
  * @license https://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
- * @version 1.0.0
+ * @version 1.0.1
  */
 class AdminerForeignDatalist {
 
@@ -65,8 +65,7 @@ class AdminerForeignDatalist {
 			$jsonArray = get_vals($query);
 			if (empty($jsonArray)) { $jsonArray = array(':error'); }
 			echo json_encode($jsonArray);
-			// Stop everything
-			die();
+			die(); // Stop
 		}
 	}
 
@@ -81,9 +80,13 @@ class AdminerForeignDatalist {
 			for (let searchFieldDropDown of searchFieldDropDowns ) {
 				if ( searchFieldDropDown.innerText.match(/<?php echo $this->fieldsufix; ?>$/) ) {
 					var inputfield = searchFieldDropDown.parentElement.getElementsByTagName('input')[0]; // input field
-					inputfield.setAttribute("autocomplete", "off"); // disable browser-integrated autocomplete
+					inputfield.setAttribute("autocomplete", "off"); // disable browser autocomplete
 					inputfield.addEventListener('mousedown', populateAutocompleteDataList);
-					// inputfield.style.border = "2px dashed red";
+					// make field bigger and remove only-numbers constraint
+					if (inputfield.getAttribute('type') == 'number') {
+						inputfield.setAttribute('size', '40');
+						inputfield.removeAttribute('type');
+					}
 				}
 			}
 		});
@@ -94,42 +97,39 @@ class AdminerForeignDatalist {
 			var fieldsufix = '<?php echo $this->fieldsufix; ?>';
 			table = ev.target.parentElement.parentElement.getElementsByTagName('th')[0].innerText;
 			table = encodeURIComponent(table.slice(0, (-1 * fieldsufix.length))); // Strips the suffix out
-			// datalist 'id' html attribute
-			var fkDropDownId = table + "_dropdown";
-			// create datalist object if it does not exist
+			// define datalist id
+			var fkDropDownId = table + '_dropdown';
+			// create datalist object
 			if(! document.getElementById(fkDropDownId)) {
 				var dataList = document.createElement('datalist');
 				dataList.setAttribute('id', fkDropDownId);
-				ev.target.append(dataList);
+				ev.target.parentElement.append(dataList);
 			}
 			var dataList = document.getElementById(fkDropDownId);
-			if(dataList.getAttribute("filled") == 'true') {
+			if(ev.target.getAttribute('list') == fkDropDownId) {
 				return; // datalist already filled. quit
 			}
 			// fills datalist with ajax-returned values
-			dataList.innerHTML = "";
+			dataList.innerHTML = '';
 			var autoCompleteXHR = new XMLHttpRequest();
-			autoCompleteXHR.open("POST", "", true);
-			autoCompleteXHR.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-			autoCompleteXHR.send("foreignDatalist=" + table );
+			autoCompleteXHR.open('POST', '', true);
+			autoCompleteXHR.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+			autoCompleteXHR.send('foreignDatalist=' + table );
 			autoCompleteXHR.onreadystatechange = function() {
 				if (this.readyState == 4 && this.status == 200) {
 					var response = JSON.parse(this.responseText);
 					response.forEach(function(item) {
 						// Create a new <option> element.
 						var option = document.createElement('option');
-						option.value = item.split(':')[0]; // valor a ser recuperado
-						option.innerHTML = item; // valor a ser apresentado na lista
+						option.value = item.split(':')[0]; // just the value
+						option.innerHTML = item; // all information
 						// attach the option to the datalist element
 						dataList.appendChild(option);
 					});
 				}
 			}
-			// indicates that datalist is filled
-			dataList.setAttribute("filled", 'true');
 			// attach the datalist to this input field
 			ev.target.setAttribute('list', fkDropDownId);
-			// ev.target.focus();
 		}
 		</script>
 		<?php
