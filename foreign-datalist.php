@@ -1,137 +1,178 @@
 <?php
 /**
- * This allows you attach a datalist dropdown interface right below any input field of your choice.
- * Useful when you need to search thru values that are stored on another table.
+ * IMPORTANT: Please, activate struct-comments.php plugin before continue.
+ * It is necessary because this plugin needs to read the field's comment in html interface.
  *
- * The 'datalisted' field MUST have the same name of the dimension table, followed by fieldsufix.
- *   Eg: 'product_id' means table='product' and sufix='_id'.
+ * USAGE EXAMPLE:
  *
- * The datalist is ajax-attached to each input right after you click on input field..
+ * Lets say you have a field called EMPLOYEE_ID in the table ORDERS and you want fill it with
+ *   employee's ID by typing any part of it's name or phone number that are stored in another table.
+ *   The list must show only ACTIVE employees and return a maximum of 999 rows.
  *
- * There are 3 ways to present the datalist: DownKey, MouseClick or Start Type Something.
+ * Alter the structure of ORDERS table and insert the string below in the EMPLOYEE_ID comment:
  *
- * The list are presented in the following format 'value:extraDescription'
- * extraDescription helps on type-filtering but only 'value' are returned.
+ * "dropdown:{table:HR.EMPLOYEES, label:[FULL_NAME, PHONE], value:ID, filter:ACTIVE, limit:999}"
  *
- * Everything needed is bundled in this file. No external dependencies.
+ * filter and limit are optional, where:
+ *   filter: will add a "WHERE ACTIVE = '1'" in sql query
+ *   limit: will overwrite the default value (10000)
  *
- * Tested with mysql 5.7 and php 7.3
+ * Do NOT put any parameter inside Quotation Marks (").
+ *
+ * In the EDIT interface, the user will click on EMPLOYEE_ID and start typing.
+ * The click will start the plugin that reads the comment, make an ajax call, read the HR.EMPLOYEES
+ *   table, return a json with results (select2.org format) and attach then as a datalist.
+ *
+ * The main structure of this plugin was taken from
+ * https://github.com/derStephan/AdminerPlugins/blob/master/searchAutocomplete.php thanks!
+ *
+ * This approach has some advantages:
+ *  No ajax call is make, unless user CLICK on the field.
+ *  Results are cached on user's browser until the page is reload (field became lightgreen to indicate)
+ *  The user has the free to change
+ *  The user is free to input any value, even if not in the list
+ *
+ * Tested with php 7.0~8.3 / mysql 5.7~8.0
  *
  * @author Marcelo Gennari, https://gren.com.br/
  * @license https://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
- * @version 1.0.1
+ * @version 2.0.0
  */
-class AdminerForeignDatalist {
+
+class AdminerForeignDatalistGren {
+	/** @access protected */
+	var $placeholder, $limit;
 
 	/**
-	* @param string fieldsufix: Fields terminated with this string will activate the datalist. Defaults to '_id'
-	* @param string value: Returned field of the external table. Defaults to 'id'.
-	* @param string extraDescription: field that contains additional information. Nullable. Defaults to 'description'.
-	* @param string active: 'enum('0','1') field used to exclude values you dont want to bring to the datalist.
-	* @param int limit: Max datalist size. Defaults to 5000.
+	* @param string placeholder: Placeholder applied to the field.
+	* @param int limit: Max datalist size. Defaults to 10000.
 	*/
-	function __construct($fieldsufix = '_id', $value = 'id'
-			, $extraDescription = 'description', $active = 'active', $limit = 5000) {
-		$this->fieldsufix = $fieldsufix;
-		$this->value = $value;
-		$this->extraDescription = $extraDescription;
-		$this->active = $active;
-		$this->limit = $limit;
+
+	function __construct(
+			$placeholder = 'Click and type keydown to show options'
+			, $limit = 10000
+			) {
+			$this->placeholder = $placeholder;
+			$this->limit = $limit;
 	}
 
-	// react to plugin ajax-requests with json
+	// answer ajax requests with json
 	public function headers() {
-		if(isset($_POST["foreignDatalist"])) { // ajax call?
-			set_time_limit(5);
-			// Sanitize inputs
-			$table = preg_replace("/[^a-zA-Z0-9_-]/", "", $_POST["foreignDatalist"]);
-			$db = preg_replace("/[^a-zA-Z0-9_-]/", "", $_GET["db"]);
-			unset($_POST["foreignDatalist"]);
-			// Build query
-			$query = "SELECT";
-			if ($this->extraDescription) {
-				$query .= " concat($this->value, ':', $this->extraDescription)";
-			} else {
-				$query .= " $this->value";
+		if(isset($_POST["foreignDatalistGren"])) { // ajax call?
+			try {
+				set_time_limit(5);
+				$payload = json_decode($_POST["foreignDatalistGren"]);
+				// $dbTableFieldname = preg_replace("/[^a-zA-Z0-9._~-]/", "", $payload->jsonFromComment->table);
+				unset($_POST["foreignDatalistGren"]);
+				// prepare values from payload
+				$labels = (gettype($payload->jsonFromComment->labels) == 'array') ? $payload->jsonFromComment->labels : [$payload->jsonFromComment->labels];
+				$value = [$payload->jsonFromComment->value]; // array
+				$filter = isset($payload->jsonFromComment->filter) ? $payload->jsonFromComment->filter : '';
+				$limit = (isset($payload->jsonFromComment->limit) && preg_match('~^\d{1,5}$~', $payload->jsonFromComment->limit))
+						? $payload->jsonFromComment->limit
+						: $this->limit;
+				// build query
+				$select = 'SELECT ' . implode(", ", array_unique(array_merge($labels, $value)));
+				$from = ' FROM ' . $payload->jsonFromComment->table;
+				$where = $filter ? " WHERE $filter = '1'" : '';
+				$limit = " LIMIT $limit";
+				$query = $select . $from . $where . $limit . ';';
+				// Submit the query and save results into an select2 compatible object
+				$connection = connection(); $output = (object) array('results' => array());
+				$resultset = $connection->query($query, 1);
+				if ($resultset) {
+					while ($row = $resultset->fetch_assoc()) {
+						$output->results[] = (object) ['id' => ($row[$value[0]] ? $row[$value[0]] : ''), 'text' => implode(", ", array_intersect_key($row, array_flip($labels)))];
+					}
+				} else {
+					throw new Exception("Consulta sem resultados: ($query)");
+				}
+			} catch (Exception $ex) {
+				$output->results[] = (object) [ 'id' => 'erro', 'text' => $ex->getMessage() ];
 			}
-			$query .= " AS dropdownvalue FROM $db.$table";
-			if ($this->active) {
-				$query .= " WHERE $this->active = '1'";
-			}
-			if ($this->limit) {
-				$query .= " LIMIT $this->limit";
-			}
-			// Results
-			$jsonArray = get_vals($query);
-			if (empty($jsonArray)) { $jsonArray = array(':error'); }
-			echo json_encode($jsonArray);
-			die(); // Stop
+			echo json_encode($output);
+			die(); // stop
 		}
 	}
 
 	public function head() {
-		if(! isset($_GET["edit"]))
-			return; // all below is valid only on edit interfaces
+		// INICIAL CHECK
+		// interface must be 'edit'
+		if (! isset($_GET['edit']) ) { return; }
+		// user must be logged in
+		if (! ($_GET['username'] && $_SESSION['dbs']['server'][''][$_GET['username']]) ) { return; }
+		// AdminerStructComments is loaded
+		global $adminer; $regex = '~AdminerStructComments.*~';
+		$hasStructCommentsPlugin = array_filter($adminer->plugins, function($item) use ($regex) { return preg_match($regex, get_class($item)); });
+		if (! $hasStructCommentsPlugin ) { echo script("alert('" . get_class($this) . " depends on AdminerStructComments.')"); return; }
+		// at least one "dropdownable" field
+		global $fields; $dropDownableFields = [];
+		foreach ($fields as $field) { if ( preg_match("~dropdown *: *\{.+\}~", $field['comment'] )) { $dropDownableFields[] = $field['field']; } }
+		if (! $dropDownableFields ) { return; }
+		// ALL ABOVE IS OK, PROCEED
+		$dropDownableFieldsJs = '[' . implode(", ", array_map(function($item) { return "'$item'"; }, $dropDownableFields)) . ']';
 		?>
+
 		<script <?php echo nonce()?> type='text/javascript'>
 		// attach mousedown listeners
 		document.addEventListener('DOMContentLoaded', function() {
-			var searchFieldDropDowns=document.querySelectorAll('tr th'); // field names
-			for (let searchFieldDropDown of searchFieldDropDowns ) {
-				if ( searchFieldDropDown.innerText.match(/<?php echo $this->fieldsufix; ?>$/) ) {
-					var inputfield = searchFieldDropDown.parentElement.getElementsByTagName('input')[0]; // input field
-					inputfield.setAttribute("autocomplete", "off"); // disable browser autocomplete
-					inputfield.addEventListener('mousedown', populateAutocompleteDataList);
-					// make field bigger and remove only-numbers constraint
-					if (inputfield.getAttribute('type') == 'number') {
-						inputfield.setAttribute('size', '40');
-						inputfield.removeAttribute('type');
-					}
-				}
-			}
+			let dropDownableFields = <?php echo $dropDownableFieldsJs ?>.map(item => `fields[${item}]`);
+			dropDownableFields.forEach(item => {
+				let dropDownableField = document.getElementsByName(item)[0];
+				dropDownableField.addEventListener('mousedown', populateAutocompleteDataList);
+				dropDownableField.placeholder = `<?php echo $this->placeholder ?>`
+				// make field bigger and remove only-numbers constraint
+				if (dropDownableField.getAttribute('type') == 'number') { dropDownableField.setAttribute('size', '40'); dropDownableField.removeAttribute('type'); }
+			});
 		});
-
 		function populateAutocompleteDataList(ev) {
-			// define the table name
-			var table = '';
-			var fieldsufix = '<?php echo $this->fieldsufix; ?>';
-			table = ev.target.parentElement.parentElement.getElementsByTagName('th')[0].innerText;
-			table = encodeURIComponent(table.slice(0, (-1 * fieldsufix.length))); // Strips the suffix out
-			// define datalist id
-			var fkDropDownId = table + '_dropdown';
-			// create datalist object
-			if(! document.getElementById(fkDropDownId)) {
-				var dataList = document.createElement('datalist');
-				dataList.setAttribute('id', fkDropDownId);
+			// ASSEMBLE PAYLOAD
+			let fieldValue = ev.target.value.trim();
+			let jsonFromComment = extractJsonFromComment(ev.target.closest("tr").querySelector("[title]").getAttribute("title"));
+			let postPayload = JSON.stringify({'fieldValue': fieldValue, 'jsonFromComment': JSON.parse(jsonFromComment)});
+			// CREATE DATALIST OBJECT
+			let dropDownId = ev.target["name"].match(/fields\[(.+)\]/)[1] + '_dropdown';
+			if ( ! document.getElementById(dropDownId) ) {
+				let dataList = document.createElement('datalist');
+				dataList.setAttribute('id', dropDownId);
 				ev.target.parentElement.append(dataList);
 			}
-			var dataList = document.getElementById(fkDropDownId);
-			if(ev.target.getAttribute('list') == fkDropDownId) {
-				return; // datalist already filled. quit
+			// VERIFY IF DATALIST ALREADY EXISTS
+			if ( ev.target.getAttribute('list') == dropDownId ) {
+				return; // quit
 			}
-			// fills datalist with ajax-returned values
+			// FILL DATALIST WITH AJAX-RETURNED VALUES
+			// clear datalist
+			var dataList = document.getElementById(dropDownId);
 			dataList.innerHTML = '';
-			var autoCompleteXHR = new XMLHttpRequest();
-			autoCompleteXHR.open('POST', '', true);
-			autoCompleteXHR.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-			autoCompleteXHR.send('foreignDatalist=' + table );
-			autoCompleteXHR.onreadystatechange = function() {
+			// send ajax
+			var ajax = new XMLHttpRequest();
+			ajax.open('POST', '', true);
+			ajax.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+			ajax.send('foreignDatalistGren=' + postPayload);
+			// fill datalist with ajax returned json
+			ajax.onreadystatechange = function() {
 				if (this.readyState == 4 && this.status == 200) {
 					var response = JSON.parse(this.responseText);
-					response.forEach(function(item) {
-						// Create a new <option> element.
-						var option = document.createElement('option');
-						option.value = item.split(':')[0]; // just the value
-						option.innerHTML = item; // all information
-						// attach the option to the datalist element
+					ev.target.setAttribute('autocomplete', 'off'); // clear autocomplete
+					response.results.forEach(function(item) {
+						var option = document.createElement('option'); // temp obj
+						option.value = item.id; option.label = item.text;
 						dataList.appendChild(option);
+						ev.target.style.backgroundColor = "#f6ffe9"; // light green to indicate resuts are attached
+						ev.target.setAttribute('list', dropDownId); // attach the datalist to this input field
 					});
 				}
 			}
-			// attach the datalist to this input field
-			ev.target.setAttribute('list', fkDropDownId);
+		}
+		function extractJsonFromComment(comment) {
+			let extracted = comment.match(/dropdown *: *(\{.+\})/i)[1].replace(/["']/g, '');
+			let $return = extracted.replace(/[\w\-._]+/g, match => `"${match}"`);
+			return $return;
 		}
 		</script>
+
 		<?php
 	}
+
 }
