@@ -27,25 +27,24 @@
  * https://github.com/derStephan/AdminerPlugins/blob/master/searchAutocomplete.php thanks!
  *
  * This approach has some advantages:
- *  No ajax call is make, unless user CLICK on the field.
- *  Results are cached on user's browser until the page is reload (field became lightgreen to indicate)
- *  The user has the free to change
- *  The user is free to input any value, even if not in the list
+ *   No ajax call is made, unless user clicks in the field.
+ *   Results are cached on browser until page reload (field became lightgreen)
+ *   Ordinary users can change dropdown behavior, just editing the field's comment
+ *   The field still accepts any value, even if not in the list
+ *   No need of an external table to keep configurations
+ *   Dropdown data-origin can be checked with a simple mouseover on the field's title
  *
  * Tested with php 7.0~8.3 / mysql 5.7~8.0
  *
  * @author Marcelo Gennari, https://gren.com.br/
  * @license https://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
- * @version 2.0.1
+ * @param string placeholder: Placeholder applied to the field.
+ * @param int limit: Max datalist size. Defaults to 10000.
+ * @version 2.0.2
  */
 class AdminerForeignDatalist {
 	/** @access protected */
 	var $placeholder, $limit;
-
-	/**
-	* @param string placeholder: Placeholder applied to the field.
-	* @param int limit: Max datalist size. Defaults to 10000.
-	*/
 
 	function __construct(
 			$placeholder = 'Click and type keydown to show options'
@@ -61,7 +60,6 @@ class AdminerForeignDatalist {
 			try {
 				set_time_limit(5);
 				$payload = json_decode($_POST["foreignDatalistGren"]);
-				// $dbTableFieldname = preg_replace("/[^a-zA-Z0-9._~-]/", "", $payload->jsonFromComment->table);
 				unset($_POST["foreignDatalistGren"]);
 				// prepare values from payload
 				$labels = (gettype($payload->jsonFromComment->labels) == 'array') ? $payload->jsonFromComment->labels : [$payload->jsonFromComment->labels];
