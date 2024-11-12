@@ -36,7 +36,7 @@
  *
  * @author Marcelo Gennari, https://gren.com.br/
  * @license https://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
- * @version 2.0.0
+ * @version 2.0.1
  */
 class AdminerForeignDatalist {
 	/** @access protected */
@@ -98,14 +98,15 @@ class AdminerForeignDatalist {
 		// INICIAL CHECK
 		// interface must be 'edit'
 		if (! isset($_GET['edit']) ) { return; }
-		// user must be logged in
-		if (! ($_GET['username'] && $_SESSION['dbs']['server'][''][$_GET['username']]) ) { return; }
+		// global $fields can't be null
+		global $fields;
+		if (! $fields ) { return; }
 		// AdminerStructComments is loaded
 		global $adminer; $regex = '~AdminerStructComments.*~';
 		$hasStructCommentsPlugin = array_filter($adminer->plugins, function($item) use ($regex) { return preg_match($regex, get_class($item)); });
 		if (! $hasStructCommentsPlugin ) { echo script("alert('" . get_class($this) . " depends on AdminerStructComments.')"); return; }
 		// at least one "dropdownable" field
-		global $fields; $dropDownableFields = [];
+		$dropDownableFields = [];
 		foreach ($fields as $field) { if ( preg_match("~dropdown *: *\{.+\}~", $field['comment'] )) { $dropDownableFields[] = $field['field']; } }
 		if (! $dropDownableFields ) { return; }
 		// ALL ABOVE IS OK, PROCEED
