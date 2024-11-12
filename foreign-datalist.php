@@ -38,8 +38,7 @@
  * @license https://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
  * @version 2.0.0
  */
-
-class AdminerForeignDatalistGren {
+class AdminerForeignDatalist {
 	/** @access protected */
 	var $placeholder, $limit;
 
@@ -85,7 +84,7 @@ class AdminerForeignDatalistGren {
 						$output->results[] = (object) ['id' => ($row[$value[0]] ? $row[$value[0]] : ''), 'text' => implode(", ", array_intersect_key($row, array_flip($labels)))];
 					}
 				} else {
-					throw new Exception("Consulta sem resultados: ($query)");
+					throw new Exception("No results: ($query)");
 				}
 			} catch (Exception $ex) {
 				$output->results[] = (object) [ 'id' => 'erro', 'text' => $ex->getMessage() ];
@@ -159,8 +158,8 @@ class AdminerForeignDatalistGren {
 						var option = document.createElement('option'); // temp obj
 						option.value = item.id; option.label = item.text;
 						dataList.appendChild(option);
-						ev.target.style.backgroundColor = "#f6ffe9"; // light green to indicate resuts are attached
-						ev.target.setAttribute('list', dropDownId); // attach the datalist to this input field
+						ev.target.style.backgroundColor = "#f6ffe9"; // light green to indicate resuts cached
+						ev.target.setAttribute('list', dropDownId); // attach the datalist
 					});
 				}
 			}
