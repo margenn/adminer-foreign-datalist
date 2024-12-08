@@ -27,7 +27,7 @@
  * https://github.com/derStephan/AdminerPlugins/blob/master/searchAutocomplete.php thanks!
  *
  * This approach has some advantages:
- *   No ajax call is made, unless user clicks in the field.
+ *   No ajax call is done, unless user clicks in the field.
  *   Results are cached on browser until page reload (field became lightgreen)
  *   Ordinary users can change dropdown behavior, just editing the field's comment
  *   The field still accepts any value, even if not in the list

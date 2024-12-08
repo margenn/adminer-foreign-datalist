@@ -1,0 +1,35 @@
+/* Custom foreign-datalist plugin - add this to adminer.css */
+
+/* table cell container style */
+.datalist-ajax {
+	position: relative;
+}
+
+/* spinner */
+.datalist-ajax-pending > .spinner {
+	position: absolute;
+	top: 6px;
+	right: 8px;
+	width: 13px;
+	height: 13px;
+	border: 3px solid #6f6f6f;
+	border-top-color: #d1d1d1;
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+	transform: translateY(-50%);
+	pointer-events: none; /* Allow input interaction without interference */
+  }
+
+.datalist-ajax-done-error > input {
+	background-color: #ffefef;
+}
+
+.datalist-ajax-done-ok > input {
+	background-color: #fbffef;
+}
+
+/* spinner animation */
+@keyframes spin {
+from { transform: rotate(0deg); }
+to { transform: rotate(360deg); }
+}
