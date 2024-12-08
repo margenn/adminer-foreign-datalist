@@ -40,18 +40,20 @@
  * @license https://www.gnu.org/licenses/gpl-2.0.html GNU General Public License, version 2 (one or other)
  * @param string placeholder: Placeholder applied to the field.
  * @param int limit: Max datalist size. Defaults to 10000.
- * @version 2.0.2
+ * @version 2.1.1
  */
+
 class AdminerForeignDatalist {
+
 	/** @access protected */
 	var $placeholder, $limit;
 
 	function __construct(
-			$placeholder = 'Click and type keydown to show options'
-			, $limit = 10000
-			) {
-			$this->placeholder = $placeholder;
-			$this->limit = $limit;
+		$placeholder = 'Show dropdown: ⬆️ ⬇️ . 🔠: starts filter',
+		$limit = 10000
+	) {
+		$this->placeholder = $placeholder;
+		$this->limit = $limit;
 	}
 
 	// answer ajax requests with json
@@ -62,7 +64,8 @@ class AdminerForeignDatalist {
 				$payload = json_decode($_POST["foreignDatalistGren"]);
 				unset($_POST["foreignDatalistGren"]);
 				// prepare values from payload
-				$labels = (gettype($payload->jsonFromComment->labels) == 'array') ? $payload->jsonFromComment->labels : [$payload->jsonFromComment->labels];
+				$labels = (gettype($payload->jsonFromComment->labels) == 'array')
+						? $payload->jsonFromComment->labels : [$payload->jsonFromComment->labels];
 				$value = [$payload->jsonFromComment->value]; // array
 				$filter = isset($payload->jsonFromComment->filter) ? $payload->jsonFromComment->filter : '';
 				$limit = (isset($payload->jsonFromComment->limit) && preg_match('~^\d{1,5}$~', $payload->jsonFromComment->limit))
@@ -79,13 +82,16 @@ class AdminerForeignDatalist {
 				$resultset = $connection->query($query, 1);
 				if ($resultset) {
 					while ($row = $resultset->fetch_assoc()) {
-						$output->results[] = (object) ['id' => ($row[$value[0]] ? $row[$value[0]] : ''), 'text' => implode(", ", array_intersect_key($row, array_flip($labels)))];
+						$output->results[] = (object) [
+							'id' => ($row[$value[0]] ? $row[$value[0]] : ''),
+							'text' => implode(", ", array_intersect_key($row, array_flip($labels)))
+						];
 					}
 				} else {
 					throw new Exception("No results: ($query)");
 				}
 			} catch (Exception $ex) {
-				$output->results[] = (object) [ 'id' => 'erro', 'text' => $ex->getMessage() ];
+				$output->results[] = (object) [ 'id' => 'error', 'text' => $ex->getMessage() ];
 			}
 			echo json_encode($output);
 			die(); // stop
@@ -96,11 +102,11 @@ class AdminerForeignDatalist {
 		// INICIAL CHECK
 		// interface must be 'edit'
 		if (! isset($_GET['edit']) ) { return; }
-		// global $fields can't be null
-		global $fields;
-		if (! $fields ) { return; }
-		// AdminerStructComments is loaded
-		global $adminer; $regex = '~AdminerStructComments.*~';
+		// $fields can't be null
+		$fields = fields($_GET["edit"]); if (! $fields ) { return; }
+		// AdminerStructComments must be loaded
+		$adminer = adminer();
+		$regex = '~AdminerStructComments.*~';
 		$hasStructCommentsPlugin = array_filter($adminer->plugins, function($item) use ($regex) { return preg_match($regex, get_class($item)); });
 		if (! $hasStructCommentsPlugin ) { echo script("alert('" . get_class($this) . " depends on AdminerStructComments.')"); return; }
 		// at least one "dropdownable" field
@@ -117,49 +123,73 @@ class AdminerForeignDatalist {
 			let dropDownableFields = <?php echo $dropDownableFieldsJs ?>.map(item => `fields[${item}]`);
 			dropDownableFields.forEach(item => {
 				let dropDownableField = document.getElementsByName(item)[0];
-				dropDownableField.addEventListener('mousedown', populateAutocompleteDataList);
-				dropDownableField.placeholder = `<?php echo $this->placeholder ?>`
-				// make field bigger and remove only-numbers constraint
-				if (dropDownableField.getAttribute('type') == 'number') { dropDownableField.setAttribute('size', '40'); dropDownableField.removeAttribute('type'); }
+				dropDownableField.addEventListener('mousedown', populateDatalist); // event
+				dropDownableField.parentElement.classList.add('datalist-ajax'); // css
+				dropDownableField.placeholder = `<?php echo $this->placeholder ?>`; // css
+				let tmp = document.createElement('span'); tmp.className="spinner"; dropDownableField.insertAdjacentElement('afterend', tmp);
+				if (dropDownableField.getAttribute('type') == 'number') {
+					// make field bigger and remove only-numbers constraint
+					dropDownableField.setAttribute('size', '40'); dropDownableField.removeAttribute('type');
+				}
 			});
 		});
-		function populateAutocompleteDataList(ev) {
+		function populateDatalist(ev) {
 			// ASSEMBLE PAYLOAD
-			let fieldValue = ev.target.value.trim();
-			let jsonFromComment = extractJsonFromComment(ev.target.closest("tr").querySelector("[title]").getAttribute("title"));
-			let postPayload = JSON.stringify({'fieldValue': fieldValue, 'jsonFromComment': JSON.parse(jsonFromComment)});
+			const input = ev.target; let fieldValue = input.value.trim();
+			let jsonFromComment = extractJsonFromComment(input.closest("tr").querySelector("[title]").getAttribute("title"));
+			let payload = {'fieldValue': fieldValue, 'jsonFromComment': JSON.parse(jsonFromComment)};
 			// CREATE DATALIST OBJECT
-			let dropDownId = ev.target["name"].match(/fields\[(.+)\]/)[1] + '_dropdown';
-			if ( ! document.getElementById(dropDownId) ) {
+			let datalistId = input.name.match(/fields\[(.+)\]/)[1] + '_datalist';
+			if ( ! document.getElementById(datalistId) ) {
 				let dataList = document.createElement('datalist');
-				dataList.setAttribute('id', dropDownId);
-				ev.target.parentElement.append(dataList);
+				dataList.setAttribute('id', datalistId);
+				input.parentElement.append(dataList);
 			}
-			// VERIFY IF DATALIST ALREADY EXISTS
-			if ( ev.target.getAttribute('list') == dropDownId ) {
-				return; // quit
-			}
-			// FILL DATALIST WITH AJAX-RETURNED VALUES
-			// clear datalist
-			var dataList = document.getElementById(dropDownId);
-			dataList.innerHTML = '';
-			// send ajax
-			var ajax = new XMLHttpRequest();
-			ajax.open('POST', '', true);
+			// QUIT IF INPUT ALREADY HAS A DATALIST (CACHE)
+			if ( input.getAttribute('list') == datalistId ) { return; }
+			// BEFORE AJAX
+			var dataList = document.getElementById(datalistId);
+			dataList.innerHTML = ''; // attach/clear datalist
+			input.removeEventListener('mousedown', populateDatalist); // block further ajax calls
+			input.parentElement.classList.add('datalist-ajax-pending'); // css
+
+			// AJAX
+			const ajax = new XMLHttpRequest(); console.debug("chamada ajax iniciada")
+			ajax.open('POST', '', true); // '':this url true:asyncmode
 			ajax.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-			ajax.send('foreignDatalistGren=' + postPayload);
-			// fill datalist with ajax returned json
+			ajax.send('foreignDatalistGren=' + JSON.stringify(payload));
 			ajax.onreadystatechange = function() {
-				if (this.readyState == 4 && this.status == 200) {
-					var response = JSON.parse(this.responseText);
-					ev.target.setAttribute('autocomplete', 'off'); // clear autocomplete
-					response.results.forEach(function(item) {
-						var option = document.createElement('option'); // temp obj
-						option.value = item.id; option.label = item.text;
-						dataList.appendChild(option);
-						ev.target.style.backgroundColor = "#f6ffe9"; // light green to indicate resuts cached
-						ev.target.setAttribute('list', dropDownId); // attach the datalist
-					});
+				if (this.readyState == this.DONE) {
+					let responseObj = null;
+					if (this.status == 200) {
+						try {
+							responseObj = JSON.parse(this.responseText);
+						} catch (e) {
+							console.warn(e.message)
+							if (match = this.responseText.match(/(\{"result[\s\S]+\}\]\})/)) {
+								responseObj = JSON.parse(match[0]); // 2nd try
+							} else {
+								responseObj = {results: [{'id':'error', 'text': e.message}]};
+								console.error(e.message);
+							}
+						}
+					} else {
+						responseObj = {results: [{'id':'error', 'text': `${this.statusText}: ${this.status}`}]};
+					}
+					input.setAttribute('autocomplete', 'off'); // clear autocomplete
+					if ( typeof responseObj.results == 'object' && responseObj.results.length > 1 ) { // is responseObj ok?
+						responseObj.results.forEach(item => {
+							let tmpOption = document.createElement('option'); tmpOption.value = item.id; tmpOption.label = item.text;
+							dataList.appendChild(tmpOption);
+						});
+						input.setAttribute('list', datalistId); // attach datalist
+						input.addEventListener('mousedown', populateDatalist); // reattach listener
+						input.parentElement.classList.replace('datalist-ajax-pending', 'datalist-ajax-done-ok');
+					} else {
+						input.placeholder = 'Error. F12 > Console for details';
+						console.error(responseObj.results[0].text);
+						input.parentElement.classList.replace('datalist-ajax-pending', 'datalist-ajax-done-error'); // css
+					}
 				}
 			}
 		}
